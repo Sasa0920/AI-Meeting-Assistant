@@ -9,5 +9,9 @@ class Settings:
     # assuming this file is in backend/app/config.py, project root is two levels up
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", os.path.join(PROJECT_ROOT, "data", "raw_audio"))
+    TRANSCRIPT_DIR: str = os.getenv("TRANSCRIPT_DIR", os.path.join(PROJECT_ROOT, "data", "transcripts"))
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small")
+    HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN", "")
+    DIARIZATION_MODEL: str = os.getenv("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
 
 settings = Settings()

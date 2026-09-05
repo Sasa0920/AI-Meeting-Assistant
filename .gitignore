@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project specific
+assistant/
+data/raw_audio/*
+!data/raw_audio/.gitkeep
+data/transcripts/*
+!data/transcripts/.gitkeep
