@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from app.services.merge import merge_transcript
 
 

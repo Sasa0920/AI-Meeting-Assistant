@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
 
-export default function UploadPage() {
+export default function UploadPage({ onViewMeeting, onGoToDashboard }) {
   const [file, setFile] = useState(null);
+  const [autoProcess, setAutoProcess] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: string }
+  const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: string, meetingId?: string, isProcessing?: boolean }
   const fileInputRef = useRef(null);
 
   const handleDragOver = (e) => {
@@ -41,7 +42,7 @@ export default function UploadPage() {
     formData.append('file', file);
 
     try {
-      // Backend URL running on localhost:8000
+      // 1. Upload audio file
       const response = await fetch('http://localhost:8000/meetings/upload', {
         method: 'POST',
         body: formData,
@@ -53,10 +54,32 @@ export default function UploadPage() {
         throw new Error(data.detail || 'Upload failed');
       }
 
+      const meetingId = data.meeting_id;
+      let isProcessing = false;
+
+      // 2. If auto-process is checked, trigger transcription immediately
+      if (autoProcess) {
+        try {
+          const procRes = await fetch(`http://localhost:8000/meetings/${meetingId}/process`, {
+            method: 'POST',
+          });
+          if (procRes.ok) {
+            isProcessing = true;
+          }
+        } catch (procErr) {
+          console.warn('Auto-process could not start automatically:', procErr);
+        }
+      }
+
       setStatus({
         type: 'success',
-        message: `Meeting uploaded successfully! ID: ${data.meeting_id}`
+        message: isProcessing
+          ? `Meeting uploaded successfully! Transcription & speaker diarization started in the background.`
+          : `Meeting uploaded successfully! Ready for processing.`,
+        meetingId: meetingId,
+        isProcessing: isProcessing,
       });
+
       setFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -64,7 +87,7 @@ export default function UploadPage() {
     } catch (err) {
       setStatus({
         type: 'error',
-        message: err.message || 'An error occurred during upload'
+        message: err.message || 'An error occurred during upload',
       });
     } finally {
       setUploading(false);
@@ -72,65 +95,124 @@ export default function UploadPage() {
   };
 
   return (
-    <main className="card">
-      <h2 style={{ fontSize: '1.25rem', fontWeight: 500, marginBottom: '1.5rem' }}>Upload Meeting</h2>
-      
-      <div 
+    <main className="card upload-card">
+      <div className="upload-header">
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
+          Upload Meeting Audio
+        </h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.35rem' }}>
+          Upload an audio or video recording to produce a speaker-attributed transcript and extract structured meeting intelligence.
+        </p>
+      </div>
+
+      <div
         className="input-file-wrapper"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
       >
-        <input 
-          type="file" 
+        <input
+          type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
           style={{ display: 'none' }}
           accept=".mp3,.wav,.m4a,.mp4"
         />
+
         {file ? (
-          <div>
-            <p style={{ fontWeight: 500, color: 'var(--accent-teal)' }}>{file.name}</p>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-              {(file.size / (1024 * 1024)).toFixed(2)} MB
+          <div className="file-selected-box">
+            <div className="file-icon">🎵</div>
+            <p className="file-name">{file.name}</p>
+            <p className="file-meta">
+              {(file.size / (1024 * 1024)).toFixed(2)} MB • {file.type || 'audio file'}
             </p>
+            <span className="file-change-hint">Click or drop to choose a different file</span>
           </div>
         ) : (
           <div>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem' }}>
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-            <p style={{ color: 'var(--text-primary)' }}>Click to upload or drag and drop</p>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.5rem' }}>MP3, WAV, M4A, or MP4 (Max 2GB)</p>
+            <div className="upload-icon-circle">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <p style={{ color: 'var(--text-primary)', fontWeight: 600, marginTop: '1rem', fontSize: '1rem' }}>
+              Click to browse or drag and drop audio file
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', marginTop: '0.4rem' }}>
+              Supported: MP3, WAV, M4A, or MP4 (Max size: 2 GB)
+            </p>
           </div>
         )}
       </div>
 
+      {/* Options Row */}
+      <div className="upload-options">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={autoProcess}
+            onChange={(e) => setAutoProcess(e.target.checked)}
+          />
+          <span>Automatically start transcription & diarization immediately after upload</span>
+        </label>
+      </div>
+
+      {/* Status Alerts */}
       {status && (
-        <div className={status.type === 'error' ? 'alert-error' : 'alert-success'}>
-          {status.message}
+        <div className={status.type === 'error' ? 'alert-error' : 'alert-success'} style={{ marginTop: '1.5rem' }}>
+          <p style={{ fontWeight: 500 }}>{status.message}</p>
+          {status.type === 'success' && status.meetingId && onViewMeeting && (
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                className="button-primary"
+                onClick={() => onViewMeeting(status.meetingId)}
+                style={{ fontSize: '0.875rem' }}
+              >
+                Open Meeting Details →
+              </button>
+              {onGoToDashboard && (
+                <button
+                  className="button-secondary"
+                  onClick={onGoToDashboard}
+                  style={{ fontSize: '0.875rem' }}
+                >
+                  View in Dashboard
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+      {/* Actions */}
+      <div className="upload-footer">
         {file && (
-          <button 
+          <button
             className="button-secondary"
             onClick={() => { setFile(null); setStatus(null); }}
             disabled={uploading}
           >
-            Cancel
+            Clear
           </button>
         )}
-        <button 
+        <button
           className="button-primary"
           onClick={handleUpload}
           disabled={!file || uploading}
+          style={{ minWidth: '160px' }}
         >
-          {uploading ? 'Uploading...' : 'Process Meeting'}
+          {uploading ? (
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <span className="spinner-sm"></span> Uploading...
+            </span>
+          ) : autoProcess ? (
+            'Upload & Process'
+          ) : (
+            'Upload Audio'
+          )}
         </button>
       </div>
     </main>

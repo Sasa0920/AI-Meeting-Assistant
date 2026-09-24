@@ -13,5 +13,11 @@ class Settings:
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small")
     HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN", "")
     DIARIZATION_MODEL: str = os.getenv("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
+    INTELLIGENCE_DIR: str = os.getenv("INTELLIGENCE_DIR", os.path.join(PROJECT_ROOT, "data", "intelligence"))
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    INTELLIGENCE_PROMPT_PATH: str = os.getenv(
+        "INTELLIGENCE_PROMPT_PATH", os.path.join(PROJECT_ROOT, "prompts", "meeting_intelligence.txt")
+    )
 
 settings = Settings()

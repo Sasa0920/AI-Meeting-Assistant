@@ -223,3 +223,7 @@ data/raw_audio/*
 !data/raw_audio/.gitkeep
 data/transcripts/*
 !data/transcripts/.gitkeep
+data/intelligence/*
+!data/intelligence/.gitkeep
+data/eval_dataset/*
+!data/eval_dataset/.gitkeep

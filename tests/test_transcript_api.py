@@ -39,6 +39,7 @@ client = TestClient(app)
 
 
 def setup_function():
+    app.dependency_overrides[get_db] = override_get_db
     db = TestingSessionLocal()
     db.query(Transcript).delete()
     db.query(Meeting).delete()

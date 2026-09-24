@@ -4,10 +4,19 @@ from fastapi import APIRouter, BackgroundTasks, File, UploadFile, HTTPException,
 # pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Meeting, Transcript
+from app.models import Meeting, Transcript, MeetingIntelligence
 from app.config import settings
-from app.schemas import ProcessResponse, TranscriptResponse, TranscriptSegment
+from app.schemas import (
+    ActionItem,
+    MeetingDetailResponse,
+    MeetingIntelligenceResponse,
+    MeetingListItem,
+    ProcessResponse,
+    TranscriptResponse,
+    TranscriptSegment,
+)
 from app.services.processing import process_meeting
+from app.services.intelligence_processing import process_meeting_intelligence
 import json
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -58,6 +67,63 @@ def get_transcript(meeting_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Transcript not found")
     segments = [TranscriptSegment.model_validate(segment) for segment in json.loads(transcript.segments_json)]
     return {"meeting_id": meeting_id, "status": meeting.status, "transcript": segments}
+
+
+@router.post("/{meeting_id}/intelligence", response_model=ProcessResponse, status_code=202)
+def start_intelligence(
+    meeting_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if meeting.status == "processing":
+        raise HTTPException(status_code=400, detail="Meeting is not ready — current status: processing")
+    if meeting.status not in {"done", "analyzed", "failed"}:
+        raise HTTPException(status_code=400, detail=f"Meeting is not ready — current status: {meeting.status}")
+
+    transcript = db.query(Transcript).filter(Transcript.meeting_id == meeting_id).first()
+    if transcript is None:
+        raise HTTPException(status_code=400, detail="Transcript not found for this meeting")
+
+    meeting.status = "processing"
+    meeting.processing_error = None
+    db.commit()
+    background_tasks.add_task(process_meeting_intelligence, meeting_id)
+    return {"meeting_id": meeting_id, "status": "processing"}
+
+
+@router.get(
+    "/{meeting_id}/intelligence",
+    response_model=MeetingIntelligenceResponse | ProcessResponse,
+)
+def get_intelligence(meeting_id: str, db: Session = Depends(get_db)):
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if meeting.status == "processing":
+        return ProcessResponse(meeting_id=meeting_id, status="processing")
+    if meeting.status == "failed":
+        raise HTTPException(status_code=500, detail="Processing failed")
+
+    intelligence = db.query(MeetingIntelligence).filter(MeetingIntelligence.meeting_id == meeting_id).first()
+    if intelligence is None:
+        raise HTTPException(status_code=404, detail="Intelligence result not found")
+
+    key_points = json.loads(intelligence.key_points_json)
+    decisions = json.loads(intelligence.decisions_json)
+    action_items = [ActionItem.model_validate(item) for item in json.loads(intelligence.action_items_json)]
+
+    return MeetingIntelligenceResponse(
+        meeting_id=meeting_id,
+        status=meeting.status,
+        summary=intelligence.summary,
+        key_points=key_points,
+        decisions=decisions,
+        action_items=action_items,
+    )
+
 
 @router.post("/upload")
 def upload_meeting(file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -126,3 +192,54 @@ def upload_meeting(file: UploadFile = File(...), db: Session = Depends(get_db)):
         "status": meeting.status,
         "message": "File received successfully"
     }
+
+
+@router.get("", response_model=list[MeetingListItem])
+@router.get("/", response_model=list[MeetingListItem], include_in_schema=False)
+def list_meetings(db: Session = Depends(get_db)):
+    meetings = db.query(Meeting).order_by(Meeting.upload_time.desc()).all()
+    
+    # Query meeting IDs with transcripts and intelligence in batch
+    transcript_meeting_ids = {
+        row[0] for row in db.query(Transcript.meeting_id).all()
+    }
+    intelligence_meeting_ids = {
+        row[0] for row in db.query(MeetingIntelligence.meeting_id).all()
+    }
+
+    result = []
+    for m in meetings:
+        upload_time_str = m.upload_time.isoformat() if m.upload_time else ""
+        result.append(
+            MeetingListItem(
+                id=m.id,
+                filename=m.filename,
+                upload_time=upload_time_str,
+                status=m.status,
+                has_transcript=m.id in transcript_meeting_ids,
+                has_intelligence=m.id in intelligence_meeting_ids,
+                processing_error=m.processing_error,
+            )
+        )
+    return result
+
+
+@router.get("/{meeting_id}", response_model=MeetingDetailResponse)
+def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    has_transcript = db.query(Transcript).filter(Transcript.meeting_id == meeting_id).first() is not None
+    has_intelligence = db.query(MeetingIntelligence).filter(MeetingIntelligence.meeting_id == meeting_id).first() is not None
+    upload_time_str = meeting.upload_time.isoformat() if meeting.upload_time else ""
+
+    return MeetingDetailResponse(
+        id=meeting.id,
+        filename=meeting.filename,
+        upload_time=upload_time_str,
+        status=meeting.status,
+        has_transcript=has_transcript,
+        has_intelligence=has_intelligence,
+        processing_error=meeting.processing_error,
+    )
