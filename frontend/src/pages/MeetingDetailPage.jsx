@@ -19,6 +19,7 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
   const [transcript, setTranscript] = useState(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [triggeringTranscript, setTriggeringTranscript] = useState(false);
+  const [triggeringIndex, setTriggeringIndex] = useState(false);
   const [transcriptSearch, setTranscriptSearch] = useState('');
   const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState('ALL');
 
@@ -65,10 +66,12 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
         return null;
       }
       const data = await res.json();
-      setIntelStatus(data.status);
-      if (data.status === 'analyzed') {
+      if (data.summary) {
+        setIntelStatus('analyzed');
         setIntelligence(data);
         setError(null);
+      } else {
+        setIntelStatus(data.status);
       }
       return data;
     } catch (err) {
@@ -86,7 +89,9 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
       const res = await fetch(`http://localhost:8000/meetings/${id}/transcript`);
       if (res.ok) {
         const data = await res.json();
-        setTranscript(data.transcript || []);
+        if (data.transcript && data.transcript.length > 0) {
+          setTranscript(data.transcript);
+        }
         return data;
       }
       return null;
@@ -188,6 +193,27 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
       setError(err.message || 'Failed to trigger intelligence');
     } finally {
       setTriggeringIntel(false);
+    }
+  };
+
+  // Trigger Vector Indexing (Feature 4)
+  const handleTriggerIndexing = async () => {
+    if (!meetingId) return;
+    setTriggeringIndex(true);
+    setError(null);
+    try {
+      const res = await fetch(`http://localhost:8000/meetings/${meetingId}/index`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to trigger indexing');
+      }
+      await fetchMeetingMeta(meetingId);
+    } catch (err) {
+      setError(err.message || 'Failed to trigger indexing');
+    } finally {
+      setTriggeringIndex(false);
     }
   };
 
@@ -316,8 +342,10 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
   const isUploaded = true;
   const isTranscribing = meetingMeta?.status === 'processing' && !meetingMeta?.has_transcript;
   const isTranscribed = Boolean(meetingMeta?.has_transcript || (transcript && transcript.length > 0));
-  const isAnalyzing = intelStatus === 'processing';
-  const isAnalyzed = intelStatus === 'analyzed' || meetingMeta?.has_intelligence;
+  const isAnalyzing = triggeringIntel || (intelStatus === 'processing' && !intelligence);
+  const isAnalyzed = Boolean(intelligence || intelStatus === 'analyzed' || meetingMeta?.has_intelligence);
+  const isIndexing = Boolean(triggeringIndex || (meetingMeta?.status === 'processing' && isTranscribed && !isAnalyzing));
+  const isIndexed = Boolean(meetingMeta?.has_index || meetingMeta?.status === 'indexed');
 
   return (
     <div>
@@ -384,6 +412,21 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
               {copiedReport ? '✓ Report Copied!' : '📋 Copy Report (MD)'}
             </button>
           )}
+
+          {isTranscribed && (
+            <button
+              className="button-primary"
+              style={{ backgroundColor: isIndexed ? '#4f46e5' : undefined }}
+              onClick={handleTriggerIndexing}
+              disabled={isIndexing || triggeringIndex}
+            >
+              {isIndexing || triggeringIndex
+                ? '◌ Indexing...'
+                : isIndexed
+                ? '✓ Re-index Knowledge Base'
+                : '🔍 Index Knowledge Base'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -437,6 +480,28 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
                   ? 'Extracting with Gemini...'
                   : isTranscribed
                   ? 'Ready for Analysis'
+                  : 'Waiting for Step 2'}
+              </div>
+            </div>
+          </div>
+
+          <div className={`stepper-connector ${isIndexed ? 'completed' : isIndexing ? 'active' : ''}`} />
+
+          {/* Step 4: Vector Knowledge Base */}
+          <div className={`stepper-step ${isIndexed ? 'completed' : isIndexing ? 'active' : ''}`}>
+            <div className="step-circle">
+              {isIndexed ? '🔍' : isIndexing ? '◌' : '4'}
+            </div>
+            <div className="step-info">
+              <div className="step-num">Step 4</div>
+              <div className="step-name">Knowledge Base & RAG</div>
+              <div className="step-status">
+                {isIndexed
+                  ? 'Indexed in Qdrant'
+                  : isIndexing
+                  ? 'Vectorizing...'
+                  : isTranscribed
+                  ? 'Ready to Index'
                   : 'Waiting for Step 2'}
               </div>
             </div>
@@ -512,7 +577,7 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
                 {isTranscribing || triggeringTranscript ? 'Transcribing...' : 'Run Transcription Now'}
               </button>
             </div>
-          ) : intelStatus === 'not_generated' && !intelligence ? (
+          ) : !intelligence ? (
             <div className="card empty-intel-card">
               <div className="empty-intel-icon">✦</div>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.5rem' }}>
@@ -529,7 +594,7 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
                 {triggeringIntel ? 'Starting Analysis...' : '✦ Extract Meeting Intelligence'}
               </button>
             </div>
-          ) : intelligence ? (
+          ) : (
             <div className="intelligence-grid">
               {/* 1. Executive Summary */}
               <section className="intel-section">
@@ -647,7 +712,7 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
                 )}
               </section>
             </div>
-          ) : null}
+          )}
         </div>
       )}
 

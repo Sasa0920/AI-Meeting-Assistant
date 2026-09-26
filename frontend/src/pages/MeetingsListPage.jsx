@@ -63,6 +63,8 @@ export default function MeetingsListPage({ onSelectMeeting, onGoToUpload }) {
 
   const getStatusBadge = (status) => {
     switch (status) {
+      case 'indexed':
+        return <span className="badge badge-indexed" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.3)' }}>● Indexed</span>;
       case 'analyzed':
         return <span className="badge badge-analyzed">● Analyzed</span>;
       case 'done':
@@ -81,6 +83,7 @@ export default function MeetingsListPage({ onSelectMeeting, onGoToUpload }) {
   const totalMeetings = meetings.length;
   const analyzedCount = meetings.filter((m) => m.status === 'analyzed' || m.has_intelligence).length;
   const transcribedCount = meetings.filter((m) => m.has_transcript).length;
+  const indexedCount = meetings.filter((m) => m.status === 'indexed' || m.has_index).length;
 
   return (
     <div>
@@ -121,6 +124,11 @@ export default function MeetingsListPage({ onSelectMeeting, onGoToUpload }) {
           <div className="stat-label">Intelligence Analyzed</div>
           <div className="stat-value" style={{ color: 'var(--accent-teal)' }}>{analyzedCount}</div>
           <div className="stat-desc">Summaries & action items extracted</div>
+        </div>
+        <div className="stat-card highlight">
+          <div className="stat-label">Vector Indexed</div>
+          <div className="stat-value" style={{ color: '#818cf8' }}>{indexedCount}</div>
+          <div className="stat-desc">Searchable via RAG</div>
         </div>
       </div>
 
@@ -224,6 +232,9 @@ export default function MeetingsListPage({ onSelectMeeting, onGoToUpload }) {
                   </span>
                   <span className={`pipe-chip ${m.has_intelligence ? 'active-ai' : ''}`}>
                     {m.has_intelligence ? '✦ Intelligence' : '○ Intelligence'}
+                  </span>
+                  <span className={`pipe-chip ${m.has_index ? 'active-rag' : ''}`}>
+                    {m.has_index ? '🔍 Indexed' : '○ Index'}
                   </span>
                 </div>
 

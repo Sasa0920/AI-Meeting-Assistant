@@ -189,3 +189,46 @@ def test_transcript_meeting_failed():
     response = client.get("/meetings/failed-meeting/transcript")
     assert response.status_code == 500
     assert response.json()["detail"] == "Processing failed"
+
+
+def test_transcript_persists_when_indexed_and_during_indexing():
+    db = TestingSessionLocal()
+    db.add(
+        Meeting(
+            id="meeting-idx-trans",
+            filename="meeting.wav",
+            upload_time=datetime.now(timezone.utc),
+            status="indexed",
+            file_path="meeting.wav",
+        )
+    )
+    db.add(
+        Transcript(
+            id="trans-idx-1",
+            meeting_id="meeting-idx-trans",
+            transcript_path="transcripts/dummy.json",
+            segments_json='[{"speaker":"Speaker 1","start":0.0,"end":1.0,"text":"Retained"}]',
+            whisper_model="small",
+            diarization_model="pyannote/speaker-diarization-3.1",
+        )
+    )
+    db.commit()
+    db.close()
+
+    # When indexed
+    res = client.get("/meetings/meeting-idx-trans/transcript")
+    assert res.status_code == 200
+    assert len(res.json()["transcript"]) == 1
+    assert res.json()["transcript"][0]["text"] == "Retained"
+
+    # When status is temporarily processing (e.g. re-indexing)
+    db = TestingSessionLocal()
+    m = db.get(Meeting, "meeting-idx-trans")
+    m.status = "processing"
+    db.commit()
+    db.close()
+
+    res2 = client.get("/meetings/meeting-idx-trans/transcript")
+    assert res2.status_code == 200
+    assert len(res2.json()["transcript"]) == 1
+    assert res2.json()["transcript"][0]["text"] == "Retained"

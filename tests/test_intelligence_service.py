@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
+# pyrefly: ignore [missing-import]
 import pytest
-from pydantic import ValidationError
+
 
 # pyrefly: ignore [missing-import]
 from app.schemas import ActionItem, MeetingIntelligenceOutput

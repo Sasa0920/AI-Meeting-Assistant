@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, File, UploadFile, HTTPException,
 # pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Meeting, Transcript, MeetingIntelligence
+from app.models import Meeting, Transcript, MeetingIntelligence, MeetingIndex
 from app.config import settings
 from app.schemas import (
     ActionItem,
@@ -17,6 +17,7 @@ from app.schemas import (
 )
 from app.services.processing import process_meeting
 from app.services.intelligence_processing import process_meeting_intelligence
+from app.services.indexing_processing import process_meeting_indexing
 import json
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -57,16 +58,21 @@ def get_transcript(meeting_id: str, db: Session = Depends(get_db)):
     meeting = db.get(Meeting, meeting_id)
     if meeting is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
-    if meeting.status == "processing":
-        return {"meeting_id": meeting_id, "status": "processing"}
-    if meeting.status == "failed":
-        raise HTTPException(status_code=500, detail="Processing failed")
 
     transcript = db.query(Transcript).filter(Transcript.meeting_id == meeting_id).first()
     if transcript is None:
+        if meeting.status == "processing":
+            return {"meeting_id": meeting_id, "status": "processing"}
+        if meeting.status == "failed":
+            raise HTTPException(status_code=500, detail="Processing failed")
         raise HTTPException(status_code=404, detail="Transcript not found")
+
     segments = [TranscriptSegment.model_validate(segment) for segment in json.loads(transcript.segments_json)]
-    return {"meeting_id": meeting_id, "status": meeting.status, "transcript": segments}
+    return {
+        "meeting_id": meeting_id,
+        "status": "transcribed" if meeting.status in ("done", "analyzed", "indexed") else meeting.status,
+        "transcript": segments,
+    }
 
 
 @router.post("/{meeting_id}/intelligence", response_model=ProcessResponse, status_code=202)
@@ -80,7 +86,7 @@ def start_intelligence(
         raise HTTPException(status_code=404, detail="Meeting not found")
     if meeting.status == "processing":
         raise HTTPException(status_code=400, detail="Meeting is not ready — current status: processing")
-    if meeting.status not in {"done", "analyzed", "failed"}:
+    if meeting.status not in {"done", "analyzed", "indexed", "failed"}:
         raise HTTPException(status_code=400, detail=f"Meeting is not ready — current status: {meeting.status}")
 
     transcript = db.query(Transcript).filter(Transcript.meeting_id == meeting_id).first()
@@ -102,13 +108,13 @@ def get_intelligence(meeting_id: str, db: Session = Depends(get_db)):
     meeting = db.get(Meeting, meeting_id)
     if meeting is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
-    if meeting.status == "processing":
-        return ProcessResponse(meeting_id=meeting_id, status="processing")
-    if meeting.status == "failed":
-        raise HTTPException(status_code=500, detail="Processing failed")
 
     intelligence = db.query(MeetingIntelligence).filter(MeetingIntelligence.meeting_id == meeting_id).first()
     if intelligence is None:
+        if meeting.status == "processing":
+            return ProcessResponse(meeting_id=meeting_id, status="processing")
+        if meeting.status == "failed":
+            raise HTTPException(status_code=500, detail="Processing failed")
         raise HTTPException(status_code=404, detail="Intelligence result not found")
 
     key_points = json.loads(intelligence.key_points_json)
@@ -117,12 +123,37 @@ def get_intelligence(meeting_id: str, db: Session = Depends(get_db)):
 
     return MeetingIntelligenceResponse(
         meeting_id=meeting_id,
-        status=meeting.status,
+        status="analyzed",
         summary=intelligence.summary,
         key_points=key_points,
         decisions=decisions,
         action_items=action_items,
     )
+
+
+@router.post("/{meeting_id}/index", response_model=ProcessResponse, status_code=202)
+def start_indexing(
+    meeting_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if meeting.status == "processing":
+        raise HTTPException(status_code=400, detail="Meeting is not ready — current status: processing")
+    if meeting.status not in {"analyzed", "done", "indexed", "failed"}:
+        raise HTTPException(status_code=400, detail=f"Meeting is not ready — current status: {meeting.status}")
+
+    transcript = db.query(Transcript).filter(Transcript.meeting_id == meeting_id).first()
+    if transcript is None:
+        raise HTTPException(status_code=400, detail="Transcript not found for this meeting")
+
+    meeting.status = "processing"
+    meeting.processing_error = None
+    db.commit()
+    background_tasks.add_task(process_meeting_indexing, meeting_id)
+    return {"meeting_id": meeting_id, "status": "processing"}
 
 
 @router.post("/upload")
@@ -199,12 +230,15 @@ def upload_meeting(file: UploadFile = File(...), db: Session = Depends(get_db)):
 def list_meetings(db: Session = Depends(get_db)):
     meetings = db.query(Meeting).order_by(Meeting.upload_time.desc()).all()
     
-    # Query meeting IDs with transcripts and intelligence in batch
+    # Query meeting IDs with transcripts, intelligence, and index in batch
     transcript_meeting_ids = {
         row[0] for row in db.query(Transcript.meeting_id).all()
     }
     intelligence_meeting_ids = {
         row[0] for row in db.query(MeetingIntelligence.meeting_id).all()
+    }
+    index_meeting_ids = {
+        row[0] for row in db.query(MeetingIndex.meeting_id).all()
     }
 
     result = []
@@ -218,6 +252,7 @@ def list_meetings(db: Session = Depends(get_db)):
                 status=m.status,
                 has_transcript=m.id in transcript_meeting_ids,
                 has_intelligence=m.id in intelligence_meeting_ids,
+                has_index=m.id in index_meeting_ids,
                 processing_error=m.processing_error,
             )
         )
@@ -232,6 +267,7 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
 
     has_transcript = db.query(Transcript).filter(Transcript.meeting_id == meeting_id).first() is not None
     has_intelligence = db.query(MeetingIntelligence).filter(MeetingIntelligence.meeting_id == meeting_id).first() is not None
+    has_index = db.query(MeetingIndex).filter(MeetingIndex.meeting_id == meeting_id).first() is not None
     upload_time_str = meeting.upload_time.isoformat() if meeting.upload_time else ""
 
     return MeetingDetailResponse(
@@ -241,5 +277,6 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
         status=meeting.status,
         has_transcript=has_transcript,
         has_intelligence=has_intelligence,
+        has_index=has_index,
         processing_error=meeting.processing_error,
     )

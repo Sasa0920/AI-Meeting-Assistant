@@ -370,3 +370,106 @@ def test_list_meetings_and_get_meeting():
     res_404 = client.get("/meetings/unknown-meeting-uuid")
     assert res_404.status_code == 404
 
+
+def test_get_intelligence_persists_when_meeting_indexed():
+    """Verify that intelligence & action items do not disappear when meeting is indexed."""
+    db = TestingSessionLocal()
+    db.add(
+        Meeting(
+            id="meeting-indexed-persist",
+            filename="meeting.wav",
+            upload_time=datetime.now(timezone.utc),
+            status="indexed",
+            file_path="meeting.wav",
+        )
+    )
+    db.add(
+        MeetingIntelligence(
+            id="intel-indexed-1",
+            meeting_id="meeting-indexed-persist",
+            summary="Key intelligence summary after indexing.",
+            key_points_json=json.dumps(["Indexed point"]),
+            decisions_json=json.dumps(["Indexed decision"]),
+            action_items_json=json.dumps([{"task": "Indexed action", "assignee": "Bob", "deadline": "Monday"}]),
+            intelligence_path="data/intelligence/meeting-indexed-persist.json",
+            model_name="gemini-2.5-flash",
+        )
+    )
+    db.commit()
+    db.close()
+
+    response = client.get("/meetings/meeting-indexed-persist/intelligence")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "analyzed"
+    assert data["summary"] == "Key intelligence summary after indexing."
+    assert len(data["action_items"]) == 1
+    assert data["action_items"][0]["task"] == "Indexed action"
+
+
+def test_get_intelligence_persists_while_indexing_in_progress():
+    """Verify that intelligence is still returned even if meeting.status is temporarily processing (e.g. indexing)."""
+    db = TestingSessionLocal()
+    db.add(
+        Meeting(
+            id="meeting-indexing-now",
+            filename="meeting.wav",
+            upload_time=datetime.now(timezone.utc),
+            status="processing",
+            file_path="meeting.wav",
+        )
+    )
+    db.add(
+        MeetingIntelligence(
+            id="intel-indexing-1",
+            meeting_id="meeting-indexing-now",
+            summary="Existing summary before re-indexing.",
+            key_points_json=json.dumps(["Point"]),
+            decisions_json=json.dumps(["Decision"]),
+            action_items_json=json.dumps([{"task": "Task", "assignee": None, "deadline": None}]),
+            intelligence_path="data/intelligence/meeting-indexing-now.json",
+            model_name="gemini-2.5-flash",
+        )
+    )
+    db.commit()
+    db.close()
+
+    response = client.get("/meetings/meeting-indexing-now/intelligence")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "analyzed"
+    assert data["summary"] == "Existing summary before re-indexing."
+
+
+def test_start_intelligence_allowed_on_indexed_meeting():
+    """Verify that re-running intelligence on an indexed meeting is permitted."""
+    db = TestingSessionLocal()
+    db.add(
+        Meeting(
+            id="meeting-indexed-rerun",
+            filename="meeting.wav",
+            upload_time=datetime.now(timezone.utc),
+            status="indexed",
+            file_path="meeting.wav",
+        )
+    )
+    db.add(
+        Transcript(
+            id="trans-rerun-1",
+            meeting_id="meeting-indexed-rerun",
+            transcript_path="transcripts/dummy.json",
+            segments_json='[{"speaker": "Speaker 1", "text": "Hello"}]',
+            whisper_model="small",
+            diarization_model="pyannote/speaker-diarization-3.1",
+        )
+    )
+    db.commit()
+    db.close()
+
+    with patch("app.routers.meetings.process_meeting_intelligence") as mock_worker:
+        response = client.post("/meetings/meeting-indexed-rerun/intelligence")
+        assert response.status_code == 202
+        assert response.json() == {"meeting_id": "meeting-indexed-rerun", "status": "processing"}
+        mock_worker.assert_called_once_with("meeting-indexed-rerun")
+
+

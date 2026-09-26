@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import meetings
+from app.routers import meetings, rag
 
 app = FastAPI(title="AI Meeting Assistant API")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 )
 
 app.include_router(meetings.router)
+app.include_router(rag.router)
 
 @app.get("/health")
 def health():

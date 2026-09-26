@@ -19,5 +19,13 @@ class Settings:
     INTELLIGENCE_PROMPT_PATH: str = os.getenv(
         "INTELLIGENCE_PROMPT_PATH", os.path.join(PROJECT_ROOT, "prompts", "meeting_intelligence.txt")
     )
+    QDRANT_HOST: str = os.getenv("QDRANT_HOST", "localhost")
+    QDRANT_PORT: int = int(os.getenv("QDRANT_PORT", "6333"))
+    QDRANT_COLLECTION: str = os.getenv("QDRANT_COLLECTION", "meeting_knowledge")
+    QDRANT_PATH: str = os.getenv("QDRANT_PATH", "")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    RAG_PROMPT_PATH: str = os.getenv(
+        "RAG_PROMPT_PATH", os.path.join(PROJECT_ROOT, "prompts", "rag_qa.txt")
+    )
 
 settings = Settings()

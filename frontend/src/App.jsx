@@ -3,6 +3,7 @@ import './index.css';
 import MeetingsListPage from './pages/MeetingsListPage';
 import UploadPage from './pages/UploadPage';
 import MeetingDetailPage from './pages/MeetingDetailPage';
+import SearchAskPage from './pages/SearchAskPage';
 
 function App() {
   const getInitialMeetingId = () => {
@@ -15,7 +16,7 @@ function App() {
   };
 
   const initialId = getInitialMeetingId();
-  const [currentScreen, setCurrentScreen] = useState(initialId ? 'detail' : 'dashboard'); // 'dashboard' | 'upload' | 'detail'
+  const [currentScreen, setCurrentScreen] = useState(initialId ? 'detail' : 'dashboard'); // 'dashboard' | 'upload' | 'detail' | 'search'
   const [selectedMeetingId, setSelectedMeetingId] = useState(initialId);
 
   useEffect(() => {
@@ -52,6 +53,13 @@ function App() {
     }
   };
 
+  const handleGoToSearch = () => {
+    setCurrentScreen('search');
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  };
+
   const handleGoToDetail = () => {
     setCurrentScreen('detail');
   };
@@ -65,7 +73,7 @@ function App() {
           <div>
             <h1 className="brand-title">AI Meeting Assistant</h1>
             <p className="brand-subtitle">
-              Audio Ingestion • Diarization • Gemini Intelligence
+              Audio Ingestion • Diarization • Gemini Intelligence • Knowledge Base RAG
             </p>
           </div>
         </div>
@@ -76,6 +84,12 @@ function App() {
             onClick={handleGoToDashboard}
           >
             Dashboard
+          </button>
+          <button
+            className={`nav-button ${currentScreen === 'search' ? 'active' : ''}`}
+            onClick={handleGoToSearch}
+          >
+            🔍 Search / Ask
           </button>
           <button
             className={`nav-button ${currentScreen === 'upload' ? 'active' : ''}`}
@@ -101,6 +115,12 @@ function App() {
           />
         )}
 
+        {currentScreen === 'search' && (
+          <SearchAskPage
+            onSelectMeeting={handleSelectMeeting}
+          />
+        )}
+
         {currentScreen === 'upload' && (
           <UploadPage
             onViewMeeting={handleSelectMeeting}
@@ -118,7 +138,7 @@ function App() {
       </main>
 
       <footer className="app-footer">
-        <p>AI Meeting Assistant • Built with Whisper, Pyannote & Gemini Flash</p>
+        <p>AI Meeting Assistant • Built with Whisper, Pyannote, Qdrant & Gemini Flash</p>
       </footer>
     </div>
   );

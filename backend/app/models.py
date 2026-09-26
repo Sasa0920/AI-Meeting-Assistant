@@ -1,5 +1,5 @@
 # pyrefly: ignore [missing-import]
-from sqlalchemy import Column, String, DateTime, Text
+from sqlalchemy import Column, String, DateTime, Text, Integer
 from app.database import Base
 import uuid
 from datetime import datetime, timezone
@@ -38,5 +38,16 @@ class MeetingIntelligence(Base):
     action_items_json = Column(Text, nullable=False)
     intelligence_path = Column(String, nullable=False)
     model_name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class MeetingIndex(Base):
+    __tablename__ = "meeting_indexes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    meeting_id = Column(String, nullable=False, unique=True, index=True)
+    chunks_count = Column(Integer, nullable=False, default=0)
+    collection_name = Column(String, nullable=False)
+    embedding_model = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
