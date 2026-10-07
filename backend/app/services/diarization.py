@@ -1,9 +1,9 @@
 from typing import Any
-# pyrefly: ignore [missing-import]
-import speechbrain.utils.importutils
-# pyrefly: ignore [missing-import]
-from pyannote.audio import Pipeline
+
+
 def _patch_speechbrain_windows_compat() -> None:
+    # pyrefly: ignore [missing-import]
+    import speechbrain.utils.importutils  # lazy — heavy ML import
     try:
         orig_getattr = speechbrain.utils.importutils.LazyModule.__getattr__
 
@@ -23,6 +23,8 @@ def diarize_audio(
     model_name: str,
     huggingface_token: str,
 ) -> list[dict[str, Any]]:
+    # pyrefly: ignore [missing-import]
+    from pyannote.audio import Pipeline  # lazy — avoids loading torch at import time
     _patch_speechbrain_windows_compat()
     pipeline = Pipeline.from_pretrained(model_name, use_auth_token=huggingface_token)
     diarization = pipeline(audio_path)
@@ -30,3 +32,4 @@ def diarize_audio(
     for turn, _, speaker in diarization.itertracks(yield_label=True):
         segments.append({"start": float(turn.start), "end": float(turn.end), "speaker": speaker})
     return segments
+

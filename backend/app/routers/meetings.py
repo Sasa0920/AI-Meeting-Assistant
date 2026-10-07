@@ -1,6 +1,8 @@
 import os
 # pyrefly: ignore [missing-import]
-from fastapi import APIRouter, BackgroundTasks, File, UploadFile, HTTPException, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
+# pyrefly: ignore [missing-import]
+from fastapi.responses import JSONResponse
 # pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -18,6 +20,7 @@ from app.schemas import (
 from app.services.processing import process_meeting
 from app.services.intelligence_processing import process_meeting_intelligence
 from app.services.indexing_processing import process_meeting_indexing
+from app.services.report_service import export_meeting_report, ReportExportError
 import json
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -129,6 +132,28 @@ def get_intelligence(meeting_id: str, db: Session = Depends(get_db)):
         decisions=decisions,
         action_items=action_items,
     )
+
+
+@router.get("/{meeting_id}/export")
+def export_meeting(
+    meeting_id: str,
+    format: str = Query(..., description="Export format: 'pdf' or 'docx'"),
+    db: Session = Depends(get_db),
+):
+    try:
+        buffer, filename, content_type = export_meeting_report(meeting_id, format, db)
+        return Response(
+            content=buffer.getvalue(),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    except ReportExportError as e:
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"error": e.message, "detail": e.message},
+        )
 
 
 @router.post("/{meeting_id}/index", response_model=ProcessResponse, status_code=202)

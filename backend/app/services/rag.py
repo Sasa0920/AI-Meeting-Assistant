@@ -2,8 +2,7 @@ import logging
 import os
 from typing import Any, Optional
 
-# pyrefly: ignore [missing-import]
-from langchain_google_genai import ChatGoogleGenerativeAI
+
 from pydantic import ValidationError
 
 from app.config import settings
@@ -91,6 +90,8 @@ def answer_meeting_query(
     full_prompt = prompt_template.format(context=context_text, question=clean_query)
 
     # Step 3: LLM generation with structured output
+    # pyrefly: ignore [missing-import]
+    from langchain_google_genai import ChatGoogleGenerativeAI  # lazy import
     llm = ChatGoogleGenerativeAI(
         model=settings.GEMINI_MODEL,
         google_api_key=settings.GOOGLE_API_KEY,

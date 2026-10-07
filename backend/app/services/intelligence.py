@@ -3,8 +3,7 @@ import logging
 import os
 from typing import Any
 
-# pyrefly: ignore [missing-import]
-from langchain_google_genai import ChatGoogleGenerativeAI
+
 from pydantic import ValidationError
 
 from app.config import settings
@@ -43,6 +42,8 @@ def extract_meeting_intelligence(formatted_transcript: str) -> MeetingIntelligen
     prompt_template = load_intelligence_prompt()
     full_prompt = prompt_template.format(transcript=formatted_transcript)
 
+    # pyrefly: ignore [missing-import]
+    from langchain_google_genai import ChatGoogleGenerativeAI  # lazy import
     llm = ChatGoogleGenerativeAI(
         model=settings.GEMINI_MODEL,
         google_api_key=settings.GOOGLE_API_KEY,

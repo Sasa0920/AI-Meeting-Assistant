@@ -31,6 +31,7 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [copiedReport, setCopiedReport] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState(null); // null | 'pdf' | 'docx'
   const pollIntervalRef = useRef(null);
 
   // 1. Fetch Meeting Metadata
@@ -262,6 +263,33 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
     setTimeout(() => setCopiedReport(false), 2000);
   };
 
+  // Download PDF or DOCX via the backend export endpoint
+  const handleExport = async (format) => {
+    if (!meetingId) return;
+    setExportingFormat(format);
+    setError(null);
+    try {
+      const res = await fetch(`http://localhost:8000/meetings/${meetingId}/export?format=${format}`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Export failed (HTTP ${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `meeting_report_${meetingId}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || `Failed to export ${format.toUpperCase()} report`);
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
   const toggleTaskCompleted = (idx) => {
     setCompletedTasks((prev) => ({
       ...prev,
@@ -410,6 +438,28 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
           {isAnalyzed && (
             <button className="button-secondary" onClick={handleCopyReport}>
               {copiedReport ? '✓ Report Copied!' : '📋 Copy Report (MD)'}
+            </button>
+          )}
+
+          {isAnalyzed && (
+            <button
+              className="button-secondary"
+              onClick={() => handleExport('pdf')}
+              disabled={exportingFormat !== null}
+              title="Download a styled PDF report with all meeting intelligence"
+            >
+              {exportingFormat === 'pdf' ? '⏳ Generating...' : '⬇ PDF Report'}
+            </button>
+          )}
+
+          {isAnalyzed && (
+            <button
+              className="button-secondary"
+              onClick={() => handleExport('docx')}
+              disabled={exportingFormat !== null}
+              title="Download a styled Word document (.docx)"
+            >
+              {exportingFormat === 'docx' ? '⏳ Generating...' : '⬇ Word (.docx)'}
             </button>
           )}
 
@@ -710,6 +760,35 @@ export default function MeetingDetailPage({ meetingId: initialMeetingId, onBackT
                     })}
                   </div>
                 )}
+              </section>
+
+              {/* 5. Export Report — Feature 05 */}
+              <section className="intel-section">
+                <h3 className="section-title">
+                  <span className="section-icon">⬇</span>
+                  Export Report
+                </h3>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                  <button
+                    className="button-primary"
+                    onClick={() => handleExport('pdf')}
+                    disabled={exportingFormat !== null}
+                    style={{ flex: '1 1 160px' }}
+                  >
+                    {exportingFormat === 'pdf' ? '⏳ Generating PDF...' : '⬇ Download PDF'}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    onClick={() => handleExport('docx')}
+                    disabled={exportingFormat !== null}
+                    style={{ flex: '1 1 160px' }}
+                  >
+                    {exportingFormat === 'docx' ? '⏳ Generating Word...' : '⬇ Download Word (.docx)'}
+                  </button>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', margin: 0 }}>
+                  Generates a professionally styled document containing the executive summary, key points, decisions, and action items table.
+                </p>
               </section>
             </div>
           )}
